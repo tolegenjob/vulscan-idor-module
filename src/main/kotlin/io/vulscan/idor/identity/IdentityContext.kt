@@ -43,6 +43,8 @@ class CookieStore {
 
     fun header(): String? = jar.entries.takeIf { it.isNotEmpty() }?.joinToString("; ") { (k, v) -> "$k=$v" }
 
+    fun has(name: String): Boolean = jar.containsKey(name)
+
     fun clear() = jar.clear()
 }
 
@@ -54,7 +56,7 @@ class IdentityContext(
     val identityId: UUID,
     val label: String,
     val role: String,
-    private val authType: AuthType,
+    val authType: AuthType,
     private val config: Map<String, String>,
     private val secrets: Map<String, SecretValue>,
 ) {
@@ -93,6 +95,8 @@ class IdentityContext(
     fun configValue(key: String): String? = config[key]
 
     fun secret(key: String): String? = secrets[key]?.get()
+
+    fun hasCookie(name: String): Boolean = cookies.has(name)
 
     fun clear() {
         secrets.values.forEach { it.clear() }
