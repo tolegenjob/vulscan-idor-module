@@ -25,11 +25,12 @@ class IdentityVaultTest {
     )
 
     private fun run(app: (ProbeRequest) -> io.vulscan.kit.net.ProbeResponse = { TestJobs.response("{}") }) = TestRun(
-        job(), app,
+        job(),
         listOf(
             TestJobs.credential(alice, secret = mapOf("cookie" to "session=s3cr3t-alice")),
             TestJobs.credential(bob, secret = mapOf("cookie" to "session=s3cr3t-bob")),
         ),
+        app,
     )
 
     @Test

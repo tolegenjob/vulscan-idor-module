@@ -96,7 +96,7 @@ object TestJobs {
 }
 
 /** Контекст задания для тестов: запросы уходят в [app], найденные уязвимости собираются в [findings]. */
-class TestRun(job: ScanJobPayload, app: (ProbeRequest) -> ProbeResponse, identities: List<IdentityCredential> = emptyList()) {
+class TestRun(job: ScanJobPayload, identities: List<IdentityCredential> = emptyList(), app: (ProbeRequest) -> ProbeResponse) {
     val requests = CopyOnWriteArrayList<ProbeRequest>()
     val findings = CopyOnWriteArrayList<FindingPayload>()
     val stats = MutableJobStats()
