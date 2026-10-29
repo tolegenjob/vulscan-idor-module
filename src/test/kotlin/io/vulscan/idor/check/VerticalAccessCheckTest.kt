@@ -29,7 +29,10 @@ class VerticalAccessCheckTest {
 
     private fun identityCtx(id: io.vulscan.kit.contracts.IdentityRef) = IdentityContext.from(TestJobs.credential(id))
 
-    private fun resource() = TestJobs.resource(endpoint, admin, listOf(AccessRuleRef(user.identityId, ExpectedAccess.DENY)))
+    private fun resource() = TestJobs.resource(
+        endpoint, admin, listOf(AccessRuleRef(user.identityId, ExpectedAccess.DENY)),
+        ownerMarkers = listOf("$.users[0]"),
+    )
 
     @Test
     fun `a user who sees the admin-only listing twice is a confirmed vertical escalation`() {
