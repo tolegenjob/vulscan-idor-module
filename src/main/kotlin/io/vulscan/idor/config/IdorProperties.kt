@@ -6,15 +6,19 @@ import io.vulscan.kit.worker.WorkerProperties
 data class IdorProperties(
     val maxReLoginAttemptsPerIdentity: Int = 2,
     val healthPort: Int = 8081,
+    /** Порог похожести ответа на "форму отказа" (DenialShape), выше которого считаем доступ отказанным (DENIED_SOFT). */
+    val denialSimilarityThreshold: Double = 0.90,
 ) {
     init {
         require(maxReLoginAttemptsPerIdentity in 0..5) { "maxReLoginAttemptsPerIdentity must be within 0..5" }
+        require(denialSimilarityThreshold in 0.0..1.0) { "denialSimilarityThreshold must be within 0.0..1.0" }
     }
 
     companion object {
         fun fromEnv(env: Map<String, String>) = IdorProperties(
             maxReLoginAttemptsPerIdentity = env["IDOR_MAX_RELOGIN_ATTEMPTS"]?.toIntOrNull() ?: 2,
             healthPort = env["HEALTH_PORT"]?.toIntOrNull() ?: 8081,
+            denialSimilarityThreshold = env["IDOR_DENIAL_SIMILARITY_THRESHOLD"]?.toDoubleOrNull() ?: 0.90,
         )
 
         fun workerFromEnv(env: Map<String, String>): WorkerProperties {
