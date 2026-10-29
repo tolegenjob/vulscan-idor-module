@@ -3,15 +3,18 @@ package io.vulscan.idor.check
 import io.vulscan.idor.auth.SessionManager
 import io.vulscan.idor.auth.SessionResult
 import io.vulscan.idor.compare.ResponseSignature
+import io.vulscan.idor.compare.Similarity
 import io.vulscan.idor.identity.IdentityContext
 import io.vulscan.kit.contracts.AccessRuleRef
 import io.vulscan.kit.contracts.EndpointRef
 import io.vulscan.kit.contracts.ExpectedAccess
 import io.vulscan.kit.contracts.ResourceRef
+import io.vulscan.kit.net.ProbeRequest
+import io.vulscan.kit.net.ProbeResponse
 import io.vulscan.kit.worker.BudgetedHttp
 import java.util.UUID
 
-/** Итог проверки одного правила доступа (`resource` × `rule.identityId`) по I-3. */
+/** Итог проверки одного правила доступа (`resource` × `rule.identityId`) по I-3. Поля ниже достаточны для I-5 (evidence/finding). */
 data class HorizontalCheckResult(
     val resourceId: UUID,
     val attackerId: UUID,
@@ -19,6 +22,12 @@ data class HorizontalCheckResult(
     val markerMatch: MarkerMatchResult? = null,
     val repeatConfirmed: Boolean = false,
     val anonymousStatus: Int? = null,
+    val ownerStatus: Int? = null,
+    /** Запрос/ответ последней решающей пробы атакующей identity — основа evidence. */
+    val attackerRequest: ProbeRequest? = null,
+    val attackerResponse: ProbeResponse? = null,
+    /** Похожесть пробы на «форму отказа» (0..1) — для observations/evidence, независимо от исхода. */
+    val denialSimilarity: Double? = null,
     /** Заполнено, если проверка не дошла до классификации (сессия/baseline подвели), а не из-за самого доступа. */
     val inconclusiveReason: String? = null,
 )
@@ -59,12 +68,18 @@ class HorizontalAccessCheck(
         val anonymousResponse = http.execute(ResourceRequestFactory.anonymous(endpoint, resource.idParameter, resource.idValue))
         val anonymousMatch = OwnerMarkerMatcher.match(resource.ownerMarkers, ownerBody, anonymousResponse.bodyText())
         if (anonymousResponse.status in 200..299 && anonymousMatch.any) {
-            return HorizontalCheckResult(resource.resourceId, rule.identityId, AccessOutcome.PUBLIC_OBSERVED, anonymousMatch, anonymousStatus = anonymousResponse.status)
+            return HorizontalCheckResult(
+                resource.resourceId, rule.identityId, AccessOutcome.PUBLIC_OBSERVED, anonymousMatch,
+                anonymousStatus = anonymousResponse.status, ownerStatus = ownerResponse.status,
+            )
         }
 
         when (rule.expected) {
             ExpectedAccess.PUBLIC ->
-                return HorizontalCheckResult(resource.resourceId, rule.identityId, AccessOutcome.AMBIGUOUS, anonymousMatch, anonymousStatus = anonymousResponse.status)
+                return HorizontalCheckResult(
+                    resource.resourceId, rule.identityId, AccessOutcome.AMBIGUOUS, anonymousMatch,
+                    anonymousStatus = anonymousResponse.status, ownerStatus = ownerResponse.status,
+                )
 
             ExpectedAccess.ALLOW -> {
                 val identity = other ?: return inconclusive(resource, rule, "UNKNOWN_IDENTITY")
@@ -73,12 +88,16 @@ class HorizontalAccessCheck(
                 val match = OwnerMarkerMatcher.match(resource.ownerMarkers, ownerBody, allowed.response.bodyText())
                 // Несовпадение здесь — расхождение конфигурации, а не IDOR: finding не формируется (см. I-5).
                 val outcome = if (allowed.response.status in 200..299) AccessOutcome.ALLOWED_AS_EXPECTED else AccessOutcome.AMBIGUOUS
-                return HorizontalCheckResult(resource.resourceId, rule.identityId, outcome, match, anonymousStatus = anonymousResponse.status)
+                return HorizontalCheckResult(
+                    resource.resourceId, rule.identityId, outcome, match,
+                    anonymousStatus = anonymousResponse.status, ownerStatus = ownerResponse.status,
+                    attackerRequest = resourceRequest, attackerResponse = allowed.response,
+                )
             }
 
             ExpectedAccess.DENY -> {
                 val attacker = other ?: return inconclusive(resource, rule, "UNKNOWN_IDENTITY")
-                return checkDenial(endpoint, resource, rule, attacker, ownerBody, ownerSignature, anonymousResponse.status)
+                return checkDenial(endpoint, resource, rule, attacker, ownerBody, ownerSignature, anonymousResponse.status, ownerResponse.status)
             }
         }
     }
@@ -91,6 +110,7 @@ class HorizontalAccessCheck(
         ownerBody: String,
         ownerSignature: ResponseSignature,
         anonymousStatus: Int,
+        ownerStatus: Int,
     ): HorizontalCheckResult {
         val resourceRequest = ResourceRequestFactory.build(endpoint, resource.idParameter, resource.idValue)
         val loginUrl = attacker.configValue("loginUrl")
@@ -112,6 +132,7 @@ class HorizontalAccessCheck(
         // 4. Проба.
         val (firstResult, firstMatch) = probeOnce() ?: return inconclusive(resource, rule, "SESSION_EXPIRED")
         var outcome = ResponseClassifier.classify(firstResult.response, ownerSignature, denialShape.signature, firstMatch, loginUrl, denialSimilarityThreshold)
+        val denialSimilarity = Similarity.of(ResponseSignature.of(firstResult.response), denialShape.signature)
 
         // 5. UNAUTHORIZED_ACCESS подтверждается повторным запросом; иначе — AMBIGUOUS.
         var repeatConfirmed = false
@@ -123,7 +144,10 @@ class HorizontalAccessCheck(
             if (secondOutcome == AccessOutcome.UNAUTHORIZED_ACCESS) repeatConfirmed = true else outcome = AccessOutcome.AMBIGUOUS
         }
 
-        return HorizontalCheckResult(resource.resourceId, rule.identityId, outcome, firstMatch, repeatConfirmed, anonymousStatus)
+        return HorizontalCheckResult(
+            resource.resourceId, rule.identityId, outcome, firstMatch, repeatConfirmed, anonymousStatus, ownerStatus,
+            attackerRequest = resourceRequest, attackerResponse = firstResult.response, denialSimilarity = denialSimilarity,
+        )
     }
 
     private fun inconclusive(resource: ResourceRef, rule: AccessRuleRef, reason: String) =

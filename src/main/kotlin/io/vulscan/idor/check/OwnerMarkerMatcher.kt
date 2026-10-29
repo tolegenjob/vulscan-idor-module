@@ -2,8 +2,12 @@ package io.vulscan.idor.check
 
 import io.vulscan.idor.json.JsonPath
 
-/** Одно совпадение маркера владельца в ответе другой идентичности. [masked] — значение для evidence, без PII. */
-data class MarkerMatch(val path: String, val masked: String)
+/**
+ * Одно совпадение маркера владельца в ответе другой идентичности.
+ * [value] — настоящее значение, нужно только чтобы замаскировать его в теле evidence; само наружу не публикуется.
+ * [masked] — значение для evidence/observations (`al***@lab.test`), без PII.
+ */
+data class MarkerMatch(val path: String, val value: String = "", val masked: String)
 
 data class MarkerMatchResult(val matched: List<MarkerMatch>, val total: Int) {
     /** Доля найденных маркеров: 0.0, если маркеров нет вовсе (оракул недоступен — см. I-1 markersMissing). */
@@ -21,7 +25,7 @@ object OwnerMarkerMatcher {
         val matched = ownerMarkers.mapNotNull { path ->
             val ownerValue = JsonPath.readString(ownerBody, path) ?: return@mapNotNull null
             val candidateValue = JsonPath.readString(candidateBody, path)
-            if (candidateValue == ownerValue) MarkerMatch(path, mask(ownerValue)) else null
+            if (candidateValue == ownerValue) MarkerMatch(path, ownerValue, mask(ownerValue)) else null
         }
         return MarkerMatchResult(matched, ownerMarkers.size)
     }

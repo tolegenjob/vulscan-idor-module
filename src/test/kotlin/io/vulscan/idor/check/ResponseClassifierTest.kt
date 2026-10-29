@@ -12,7 +12,7 @@ class ResponseClassifierTest {
     private val denialShape = DenialShape.of(TestJobs.response(denialJson, status = 404))
     private val ownerSignature = ResponseSignature.of(ownerResponse)
     private val noMatch = MarkerMatchResult(emptyList(), 1)
-    private val oneMatch = MarkerMatchResult(listOf(MarkerMatch("$.ownerEmail", "al***@lab.test")), 1)
+    private val oneMatch = MarkerMatchResult(listOf(MarkerMatch("$.ownerEmail", masked = "al***@lab.test")), 1)
 
     private fun classify(response: io.vulscan.kit.net.ProbeResponse, match: MarkerMatchResult = noMatch, loginUrl: String? = "/login") =
         ResponseClassifier.classify(response, ownerSignature, denialShape.signature, match, loginUrl, 0.90)
@@ -73,7 +73,7 @@ class ResponseClassifierTest {
 
     @Test
     fun `2xx with a partial marker match is still unauthorized access`() {
-        val partial = MarkerMatchResult(listOf(MarkerMatch("$.ownerEmail", "al***@lab.test")), 2)
+        val partial = MarkerMatchResult(listOf(MarkerMatch("$.ownerEmail", masked = "al***@lab.test")), 2)
         assertThat(classify(TestJobs.response("""{"ownerEmail":"alice@lab.test"}"""), match = partial)).isEqualTo(AccessOutcome.UNAUTHORIZED_ACCESS)
     }
 
